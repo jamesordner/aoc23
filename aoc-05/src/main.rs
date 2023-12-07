@@ -22,31 +22,19 @@ fn part_one(input: &Input) -> u64 {
     input
         .seeds
         .iter()
-        .copied()
-        .map(|mut seed| {
-            for mapping in &input.range_mappings {
-                if let Some(m) = mapping
-                    .iter()
-                    .find(|m| (m.src..m.src + m.range).contains(&seed))
-                {
-                    seed = m.dst + (seed - m.src);
-                }
-            }
-
-            seed
-        })
+        .map(|seed| find_location(input, *seed))
         .min()
         .unwrap()
 }
 
 fn part_two(input: &Input) -> u64 {
     let parallelism = available_parallelism().map(NonZeroUsize::get).unwrap_or(1) as u64;
-    let min = AtomicU64::new(u64::MAX);
+    let min_location = AtomicU64::new(u64::MAX);
 
     for chunk in input.seeds.chunks_exact(2) {
         let seed_start = chunk[0];
         let seed_end = chunk[0] + chunk[1];
-        let min = &min;
+        let min_location = &min_location;
 
         scope(|s| {
             for i in 0..parallelism {
@@ -54,28 +42,31 @@ fn part_two(input: &Input) -> u64 {
                     let chunk_start = seed_start + (seed_end - seed_start) * i / parallelism;
                     let chunk_end = seed_start + (seed_end - seed_start) * (i + 1) / parallelism;
 
-                    let mut min_seed = u64::MAX;
+                    let location = (chunk_start..chunk_end)
+                        .map(|seed| find_location(input, seed))
+                        .min()
+                        .unwrap();
 
-                    for mut seed in chunk_start..chunk_end {
-                        for mapping in &input.range_mappings {
-                            if let Some(m) = mapping
-                                .iter()
-                                .find(|m| (m.src..m.src + m.range).contains(&seed))
-                            {
-                                seed = m.dst + (seed - m.src);
-                            }
-                        }
-
-                        min_seed = min_seed.min(seed);
-                    }
-
-                    min.fetch_min(min_seed, Ordering::Relaxed);
+                    min_location.fetch_min(location, Ordering::Relaxed);
                 });
             }
         });
     }
 
-    min.into_inner()
+    min_location.into_inner()
+}
+
+fn find_location(input: &Input, mut seed: u64) -> u64 {
+    for mapping in &input.range_mappings {
+        if let Some(m) = mapping
+            .iter()
+            .find(|m| (m.src..m.src + m.range).contains(&seed))
+        {
+            seed = m.dst + (seed - m.src);
+        }
+    }
+
+    seed
 }
 
 struct Input {
